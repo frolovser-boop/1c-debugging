@@ -1,142 +1,244 @@
-# 1C Debugging — отладка 1С для ИИ-агентов (без Конфигуратора)
+# 1C Debugging (onec-debug)
 
-Готовое решение: ИИ-агент (Hermes, Claude Code, Cursor, Cline и любой MCP-хост)
-ставит точки останова, ловит остановы, читает стек/переменные, вычисляет BSL-выражения
-и шагает по коду 1С — без участия Конфигуратора.
+**Универсальный инструмент отладки 1С:Предприятия без Конфигуратора для AI-агентов и разработчиков.**
+
+Поддерживает работу с **любыми информационными базами** (файловыми и серверными), автоматическое обнаружение платформы 1С и баз пользователя, а также интеграцию с любыми AI-агентами по протоколу MCP.
+
+---
+
+## Возможности
+
+* 🚀 **Два режима работы:**
+  1. **Автономный Headless RDBG (чистый Python, без VS Code):** прямое общение с `dbgs.exe` по протоколу HTTP/XML. Не требует графического интерфейса, Node.js или установленного VS Code. Подходит для CI/CD, серверов и автономных агентов.
+  2. **Интеграция с VS Code / Cursor (1C Dev Tools):** работа через официальный VSIX с графическим отображением отладки в редакторе кода.
+* 📦 **Поддержка любых баз 1С:**
+  * **Автообнаружение:** автоматический парсинг баз из `%APPDATA%\1C\1CEStart\ibases.v8i` (достаточно указать имя базы из списка).
+  * **Файловые базы:** пути к каталогам (`/F"..."`, автоматический `infoBaseAlias = "DefAlias"`).
+  * **Серверные базы:** кластерные строки подключения (`/S"host:port\name"`, автоматический `infoBaseAlias = "<имя базы>"`).
+* 🤖 **MCP-сервер для AI-агентов:**
+  * Позволяет агентам (Hermes, Claude Code, Cursor, Cline, Antigravity) управлять процессом отладки через стандартные JSON-RPC вызовы (старт, брейкпоинты, стек вызовов, пошаговое выполнение, продолжить, остановить).
+* 🔍 **Автопоиск платформы 1С:**
+  * Автоматический выбор последней установленной версии платформы (`8.3.x`) и исполняемых файлов `1cv8c.exe`, `1cv8.exe`, `dbgs.exe`.
+
+---
 
 ## Архитектура
 
 ```
-ИИ-агент ──► [вариант A: скилл Hermes]  ─┐
-        └──► [вариант B/C: stdio-мост]  ─┴──► MCP "1c-debug" (расширение в редакторе)
-                                                  │ RDBG по HTTP
-                                                  v
-                                          dbgs.exe (сервер отладки платформы)
-                                                  ^ /DEBUG /DEBUGGERURL
-                                            клиент 1С (1cv8c.exe)
+                        ┌────────────────────────────────────────────────────────┐
+                        │             AI-Агент / Пользователь                    │
+                        │   (Hermes, Claude Code, Cursor, Cline, Antigravity)    │
+                        └──────────────────────────┬─────────────────────────────┘
+                                                   │
+                  ┌────────────────────────────────┴────────────────────────────────┐
+                  ▼                                                                 ▼
+      [Режим А: Headless Python]                                      [Режим Б: VS Code / Cursor]
+       python -m onec_debug mcp                                        whiterabbit.1c-dev-tools (VSIX)
+       (чистый Python, RDBG HTTP)                                      (порт 18791 + stdio мост)
+                  │                                                                 │
+                  └────────────────────────────────┬────────────────────────────────┘
+                                                   │ RDBG HTTP (порт 1572 / 1560)
+                                                   ▼
+                                       ┌───────────────────────┐
+                                       │       dbgs.exe        │
+                                       │ (сервер отладки 1С)   │
+                                       └───────────┬───────────┘
+                                                   │ /DEBUG -http /DEBUGGERURL
+                                                   ▼
+                                       ┌───────────────────────┐
+                                       │  Клиент / Сервер 1С   │
+                                       │ 1cv8c.exe / rphost    │
+                                       └───────────────────────┘
 ```
 
-- Расширение **1C Dev Tools** (`whiterabbit.1c-dev-tools`) в VS Code/Cursor поднимает
-  MCP-сервер отладки на `http://127.0.0.1:18791/mcp`, пока редактор открыт.
-- Адаптер расширения сам запускает `dbgs.exe` и клиент `1cv8c.exe` напрямую
-  (без oscript/vrunner).
-- 11 инструментов MCP: `status`, `start`, `stop`, `set_breakpoint`, `stack`,
-  `variables`, `evaluate`, `step_into`, `step_over`, `step_out`, `continue`.
+---
 
-## Состав репозитория
+## Быстрый старт
 
-| Путь | Что это |
-|---|---|
-| `extension/whiterabbit.1c-dev-tools-2.10.11.vsix` | Расширение с MCP-сервером отладки (MIT, © Andrew Ponomarev) |
-| `extension/LICENSE.txt` | Оригинальная лицензия расширения — сохранена |
-| `skill/1c-debugging/` | Скилл для Hermes Agent: SKILL.md + карта инструментов + скрипт-клиент |
-| `mcp-bridge/onec_debug_stdio.py` | stdio-MCP-мост для Claude Code / Cursor / Cline / любого MCP-хоста |
+### 1. Установка пакета
 
-## Что устанавливать (важно)
+```bash
+git clone https://gitlab.tools.russianpost.ru/1c/common/ai/mcp/1c-debugging.git
+# или: git clone https://github.com/frolovser-boop/1c-debugging.git
 
-| Компонент | Нужен? | Зачем |
-|---|---|---|
-| Платформа 1С 8.3.x | **да** | `dbgs.exe`, `1cv8c.exe` уже внутри |
-| VS Code или Cursor | **да** | в нём живёт MCP-сервер расширения |
-| Расширение 1C Dev Tools | **да** | сам MCP-сервер + адаптер |
-| Конфигуратор в режиме отладки **HTTP** | **да** | TCP-сессии адаптер не видит |
-| OneScript (oscript/vrunner/opm) | **НЕТ для отладки** | только для команд сборки/разбора палитры (dumpToSrc, build, decompile…) |
-| Серверная база 1С (Srvr="…", Ref="…") | **да** | см. «Серверная база» ниже — `/S` + `alias` = имя базы |
-| Python 3.7+ | для вариантов B/C | мост — стандартная библиотека |
-
-## Установка расширения и Конфигуратора (для всех вариантов)
-
+cd 1c-debugging
+pip install -e .
 ```
-git clone https://github.com/frolovser-boop/1c-debugging.git
-code --install-extension 1c-debugging/extension/whiterabbit.1c-dev-tools-2.10.11.vsix
-```
-Затем в Конфигураторе: Сервис → Параметры → Отладка → протокол **HTTP**.
+*(Либо можно использовать без установки в pip, запуская `python -m onec_debug ...` из папки репозитория).*
 
-## Вариант A — Hermes Agent (скилл)
+---
 
-Скопировать `skill/1c-debugging` в профиль:
-```
-C:\Hermes\profiles\<имя-профиля>\skills\1c-debugging
-```
-Скилл подхватывается автоматически: попроси агента «отладь … без Конфигуратора».
-Скрипт-клиент: `scripts/onec_debug_mcp.py` (`status` / `list` / `call <tool> '{json}'`).
+### 2. Консольный интерфейс (CLI)
 
-## Вариант B — Claude Code (нативный MCP)
-
-```
-claude mcp add 1c-debug -- python <путь>/mcp-bridge/onec_debug_stdio.py
+#### Проверка установленной платформы и путей:
+```bash
+onec-debug test
+# или: python -m onec_debug test
 ```
 
-## Вариант C — Cursor / Cline / любой MCP-хост (stdio)
-
-```json
-{"mcpServers": {
-  "1c-debug": {"command": "python", "args": ["<путь>/mcp-bridge/onec_debug_stdio.py"]}
-}}
+#### Список доступных баз из списка 1С (`ibases.v8i`):
+```bash
+onec-debug list
 ```
-Мост прозрачен: initialize/tools/list/tools/call проходят насквозь (проверено).
+*Пример вывода:*
+```text
+=== Найдено баз 1С: 13 ===
+[01] scenario
+     Тип:   СЕРВЕР (infoBaseAlias: scenario)
+     Подкл: Srvr="localhost";Ref="scenario";
+     Запуск:/S"localhost:1541\scenario"
 
-## launch.json в проекте 1С (`.vscode/launch.json`)
+[02] АСБНУ
+     Тип:   ФАЙЛОВАЯ (infoBaseAlias: DefAlias)
+     Подкл: File="E:\1C_Base\ASBNU";
+     Запуск:/F"E:\1C_Base\ASBNU"
+```
 
+#### Запуск отладки для любой базы:
+```bash
+# По имени из списка ibases.v8i:
+onec-debug run "scenario"
+
+# Серверная база по имени:
+onec-debug run --base "scenario" -u "Администратор"
+
+# Файловая база по пути к папке:
+onec-debug run "E:\1C_Base\ASBNU"
+
+# Серверная база по строке подключения:
+onec-debug run 'Srvr="localhost:1541";Ref="scenario";'
+```
+
+---
+
+## Подключение к AI-агентам (MCP)
+
+### Режим А: Автономный MCP-сервер (без VS Code)
+
+Добавьте в конфигурацию вашего агента:
+
+**Claude Desktop / Claude Code (`claude_desktop_config.json`):**
 ```json
 {
-  "configurations": [
-    {
-      "type": "onec",
-      "request": "launch",
-      "name": "1C: Отладка",
-      "debugServerHost": "localhost",
-      "debugServerPort": 1560,
-      "infoBaseAlias": "DefAlias",
-      "autoAttachTypes": ["Client", "Server", "Job"]
+  "mcpServers": {
+    "1c-debug": {
+      "command": "python",
+      "args": ["-m", "onec_debug", "mcp"],
+      "cwd": "C:/путь/к/1c-debugging"
     }
-  ]
+  }
 }
 ```
 
-- `request: "attach"` — присоединиться к уже запущенному клиенту.
-- `autoAttachTypes` (RDBG): `Client`, `ManagedClient`, `WebClient`, `ComConnector`,
-  `Server`, `ServerEmulation`, `WebService`, `HttpService`, `OData`, `Job`,
-  `JobFileMode` + мобильные; пресеты `Client`/`Server` разворачиваются в подтипы.
-- Отладка расширений конфигурации: добавить `rootProject` — каталог выгрузки
-  (основная конфигурация: каталог с `src/cf`; расширение: `src/cfe/<ИмяРасширения>`).
-
-## Типовой цикл
-
-1. `onec_debug_status` — всегда первый вызов (есть ли сессия `type=onec`).
-2. Сессии нет → настроить launch.json → пользователь запускает отладку в редакторе (F5).
-3. `set_breakpoint` (`path` к .bsl + `line`) → `start` → останов.
-4. Разбор: `stack`, `variables`, `evaluate` (BSL-выражение в кадре, как Watch).
-5. Маневры: `step_into` / `step_over` / `step_out` / `continue` / `stop`.
-
-Каждый останов пишет снимок стека в `%TEMP%\1c-dev-tools-debug-snapshot.json`.
-
-## Ограничения
-
-- Действия в клиенте 1С (кнопки, проведение) агент не нажимает: человек,
-  либо веб-клиент + прогон Тестировщиком.
-- Один клиент = один сервер отладки; Конфигуратор и агент не цепляются одновременно.
-- Порт 18791 живёт только в открытом редакторе с активным расширением.
-- `infoBaseAlias`/пути — адаптируются под базу на месте (2 минуты).
-
-## Серверная база (Srvr="…", Ref="…")
-
-Серверная база запускается ключом `/S` — **не** `/F` (файловая база) и **не** `/IBName` (не работает):
-
-```
-1cv8c.exe ENTERPRISE /S"localhost:1541\\scenario" /N"Администратор" /DEBUG -http /DEBUGGERURL "http://127.0.0.1:1572" /O Normal
+**Cursor / Cline (`settings.json`):**
+```json
+{
+  "mcpServers": {
+    "1c-debug": {
+      "command": "onec-debug",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
-Критично:
+**Hermes Agent:**
+Скопируйте директорию `skill/1c-debugging` в профиль агента:
+`C:\Hermes\profiles\<profile>\skills\1c-debugging`
 
-- **`infoBaseAlias` = имя базы** (`scenario`), а не `DefAlias`. С `DefAlias` getDbgTargets возвращает 0 целей (тихий отказ). Работает перебор: `scenario` / `SCENARIO` / `Scenario` — все сработают.
-- **Протокол отладки обязан совпадать**: если база настроена на HTTP — только `/DEBUG -http /DEBUGGERURL "http://..."`. TCP-флаги (`/DebugServer`, `/DebugServerPort`) дают ошибку «Неверно указан протокол отладки: на сервере - "http", в запускаемом приложении - "tcp"».
-- `/DEBUGGERURL` = `http://host:port` БЕЗ `/e1crdbg`. Клиент достраивает путь сам — с суффиксом цели не регистрируются.
-- Запуск через расширенный конфигуратор: `1cv8.exe DESIGNER /S"host:port\база" /N"Администратор" /DumpCfg "cfg.cf"` — выгружает полную конфигурацию (CF). UUID берётся из заголовка CF в UTF-16LE, модуль — из `decode_stage_1/<uuid>.0/text`.
-- Строк в модуле могут отличаться от git-репозитория: в серверной базе модуль 96 строк (в репо 186); вызов `ПриНачалеРаботыСистемы` на строке 64 (не 65). Всегда проверяй по CF через v8unpack (`python -m v8unpack -E`).
+#### Доступные MCP-инструменты:
+1. `onec_list_bases` — список всех доступных баз с параметрами подключения.
+2. `onec_start_debugging` — запуск отладки (принимает имя базы, путь или строку подключения).
+3. `onec_set_breakpoints` — установка точек останова (object_id, line).
+4. `onec_get_targets` — список активных целей (клиент, сервер, фоновые задания).
+5. `onec_get_call_stack` — стек вызовов при останове.
+6. `onec_continue` — продолжить выполнение (F5).
+7. `onec_step_over` / `step_into` / `step_out` — пошаговое выполнение.
+8. `onec_stop_debugging` — завершение отладки и закрытие процессов.
 
-## Лицензии и благодарности
+---
 
-- Код этого репозитория (скилл, мост, документация) — MIT, см. `LICENSE`.
-- Расширение [whiterabbit.1c-dev-tools](https://marketplace.visualstudio.com/items?itemName=whiterabbit.1c-dev-tools)
-  — MIT © Andrew Ponomarev, включено как есть с оригинальной лицензией (`extension/LICENSE.txt`).
+### Режим Б: Использование с VS Code / Cursor (через VSIX)
+
+1. Установите расширение:
+   ```bash
+   code --install-extension extension/whiterabbit.1c-dev-tools-2.10.11.vsix
+   ```
+2. Откройте проект с файлом `.vscode/launch.json`:
+   ```json
+   {
+     "version": "0.2.0",
+     "configurations": [
+       {
+         "type": "onec",
+         "request": "launch",
+         "name": "1C: Отладка",
+         "debugServerHost": "localhost",
+         "debugServerPort": 1572,
+         "infoBaseAlias": "scenario",
+         "autoAttachTypes": ["Client", "Server", "Job"]
+       }
+     ]
+   }
+   ```
+3. Расширение автоматически поднимет MCP-сервер на порту `18791`. Подключение stdio-моста:
+   ```json
+   {
+     "mcpServers": {
+       "1c-debug-vscode": {
+         "command": "python",
+         "args": ["C:/путь/к/1c-debugging/mcp-bridge/onec_debug_stdio.py"]
+       }
+     }
+   }
+   ```
+
+---
+
+## Правила работы с протоколом RDBG (1С 8.3.27)
+
+1. **infoBaseAlias:**
+   * Для **файловых баз** значение строго фиксировано: `DefAlias`.
+   * Для **серверных баз** значение обязано быть равно **имени базы в кластере** (например, `scenario`). При значении `DefAlias` сервер вернет 0 целей.
+2. **Параметры запуска клиента 1С:**
+   * Протокол должен совпадать: на сервере `http` и в клиенте `-http`.
+   * Параметр `/DEBUGGERURL`: строго `http://127.0.0.1:1572` **без суффикса `/e1crdbg`**.
+3. **PropertyID модулей:**
+   * Модуль управляемого приложения: `d22e852a-cf8a-4f77-8ccb-3548e7792bea`.
+
+---
+
+## Структура проекта
+
+```
+1c-debugging/
+├── onec_debug/                 # Основной пакет автономной отладки
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py                  # Консольный интерфейс (list, run, test, mcp)
+│   ├── detector.py             # Автопоиск платформы 1С и баз из ibases.v8i
+│   ├── rdbg.py                 # Чистая реализация RDBG HTTP протокола
+│   ├── session.py              # Управление сеансом отладки и процессами
+│   └── mcp_server.py           # Стандартный MCP-сервер для AI-агентов
+├── extension/                  # VSIX-расширение для VS Code (1C Dev Tools)
+│   ├── whiterabbit.1c-dev-tools-2.10.11.vsix
+│   └── LICENSE.txt
+├── mcp-bridge/                 # Stdio-мост для VS Code MCP
+│   └── onec_debug_stdio.py
+├── skill/                      # Готовый навык (skill) для агентов Hermes
+│   └── 1c-debugging/
+│       ├── SKILL.md
+│       ├── references/
+│       └── scripts/
+├── pyproject.toml              # Спецификация Python-пакета
+├── setup.py                    # Скрипт установки pip
+├── README.md                   # Руководство пользователя
+└── LICENSE                     # Лицензия MIT
+```
+
+---
+
+## Лицензия
+
+MIT License. См. [LICENSE](LICENSE) для подробностей.
+Расширение 1C Dev Tools (в каталоге `extension/`) распространяется по лицензии MIT (© Andrew Ponomarev).

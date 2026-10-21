@@ -1,35 +1,78 @@
 ---
 name: 1c-debugging
-description: "Используй при отладке 1С без Конфигуратора через MCP."
+description: "Универсальная отладка 1С:Предприятия без Конфигуратора: автономный Python RDBG движок и MCP-сервер для AI-агентов (Hermes, Claude Code, Cursor, Cline, Antigravity)."
 ---
 
-# Отладка 1С без Конфигуратора
+# 1C Debugging: Отладка 1С для AI-агентов и разработчиков
 
-Класс задач: поставить точку останова, поймать останов, разобрать стек/переменные/вычислить BSL-выражение в работающей сессии 1С — не открывая Конфигуратор. Механизм: расширение VS Code/Cursor «1C Dev Tools» (whiterabbit.1c-dev-tools) поднимает MCP-сервер отладки; агент ходит в него как MCP-клиент по streamable HTTP.
+Навык предоставляет два режима работы для отладки любых конфигураций 1С (файловых и серверных):
 
-## Стоящие правила
+1. **Режим А: Автономный Headless RDBG (без VS Code)**
+   * Использует чистый Python-пакет `onec_debug`.
+   * Работает напрямую с `dbgs.exe` по протоколу RDBG (HTTP/XML).
+   * Автоматически определяет установленную платформу 1С и базы из `ibases.v8i`.
+   * Запускает клиента с корректным `infoBaseAlias` (`DefAlias` для файловых, имя базы для серверных).
+   * Команда MCP: `python -m onec_debug mcp` (доступно 9 инструментов отладки).
 
-- Первым вызывай `onec_debug_status` — он отвечает, есть ли сессия `type=onec`, какие launchConfigs и где файл снимка. Не ставь брейкпойнты и не стартуй отладку до статуса.
-- Порт 18791 живёт только в процессе редактора с активным расширением. Если он закрыт — попроси пользователя открыть проект 1С в VS Code/Cursor; сам редактор не запускай и порт не жди вечно.
-- `onec_debug_start` требует `launch.json` (`type: "onec"`) в окне редактора. При `hasOnecSession=false` собери launch.json по схеме из `references/onec-debug-mcp.md` (известные ключи только из readme VSIX, не придумывай) и попроси пользователя начать отладку в том же окне, где активен MCP-сервер.
-- Действия в клиенте 1С (кнопка, проведение документа) из чата не нажимаются. Полный автоматический цикл = сессия отладки через MCP + прогон сценария веб-клиентом (скилл web-test); иначе остановы триггерит пользователь.
-- Отладка расширения работает только по HTTP-протоколу отладки платформы — обычный (не-HTTP) режим отладки этим путём не подключить.
+2. **Режим Б: Интеграция с VS Code / Cursor (через расширение 1C Dev Tools)**
+   * Расширение `whiterabbit.1c-dev-tools` поднимает локальный MCP-сервер на `http://127.0.0.1:18791/mcp`.
+   * Stdio-мост: `python mcp-bridge/onec_debug_stdio.py`.
 
-## Подключение
+---
 
-1. Живость: `netstat -ano | grep 18791` — `LISTENING` значит редактор с расширением открыт.
-2. Дальше скриптом `scripts/onec_debug_mcp.py` (сам делает handshake с Mcp-Session-Id и парсит SSE):
-   - `python scripts/onec_debug_mcp.py status` — статус сессии;
-   - `python scripts/onec_debug_mcp.py list` — список инструментов;
-   - `python scripts/onec_debug_mcp.py call onec_debug_set_breakpoint '{"path":"...bsl","line":123}'`.
-3. Ручной вариант (если скрипт недоступен): POST initialize (protocolVersion 2025-03-26, Accept: application/json + text/event-stream) → взять заголовок `Mcp-Session-Id` из ответа и класть в каждый следующий запрос → notifications/initialized → tools/list → tools/call. Ответ может быть SSE-фреймом — парси строки `data:`.
+## Быстрый старт (CLI)
 
-## Инструменты (11)
+```bash
+# 1. Проверка окружения платформы и поиск баз
+python -m onec_debug test
 
-`onec_debug_status` · `start` · `stop` · `set_breakpoint` (path к .bsl + line) · `stack` · `variables` · `evaluate` (BSL-выражение в текущем кадре, как Watch) · `step_into` / `step_over` / `step_out` · `continue`. Полная карта с параметрами — `references/onec-debug-mcp.md`.
+# 2. Вывод списка всех баз пользователя из ibases.v8i
+python -m onec_debug list
 
-Каждый останов пишет снимок стека в `%TEMP%\1c-dev-tools-debug-snapshot.json` — читается из любой сессии на той же машине.
+# 3. Запуск отладки конкретной базы (файловой или серверной)
+python -m onec_debug run "scenario"
+python -m onec_debug run --base "АСБНУ"
+python -m onec_debug run --file "E:\1C_Base\ESED"
+python -m onec_debug run --conn "Srvr=\"localhost\";Ref=\"scenario\";"
+```
 
-## Альтернатива без расширения
+---
 
-`dbgs.exe` из bin платформы (автономный HTTP-сервер отладки) + клиент с `/DEBUG` + RDBG-протокол по HTTP вручную. Тяжелее — расширение инкапсулирует то же самое; прямой протокол бери только если расширения нет или сервер отладки удалённый.
+## Подключение как MCP-сервер к AI-агентам
+
+В файл конфигурации агента (`claude_desktop_config.json`, `cursor`, `cline`):
+
+```json
+{
+  "mcpServers": {
+    "1c-debug": {
+      "command": "python",
+      "args": ["-m", "onec_debug", "mcp"],
+      "cwd": "C:/Hermes/profiles/1c-asbnu-developer-cc/skills/1c-debugging"
+    }
+  }
+}
+```
+
+### Доступные MCP-инструменты:
+* `onec_list_bases` — список всех доступных баз из списка 1С.
+* `onec_start_debugging` — запуск сеанса отладки (принимает имя базы, путь к папке или строку подключения).
+* `onec_set_breakpoints` — установка точек останова (object_id, line).
+* `onec_get_targets` — список активных процессов/сеансов 1С.
+* `onec_get_call_stack` — получение стека вызовов при останове.
+* `onec_continue` — продолжить выполнение (F5).
+* `onec_step_over` / `step_into` / `step_out` — пошаговое выполнение.
+* `onec_stop_debugging` — завершение отладки и закрытие клиента 1С.
+
+---
+
+## Правила протокола RDBG (Платформа 8.3.27)
+
+1. **Тип базы и Alias:**
+   * **Файловая база:** `infoBaseAlias = "DefAlias"`. Запуск: `/F"путь"`.
+   * **Серверная база:** `infoBaseAlias = "<имя базы>"` (строго совпадает с именем базы в кластере). Запуск: `/S"host:port\name"`.
+2. **Параметры запуска клиента 1С:**
+   * Строго HTTP: `/DEBUG -http /DEBUGGERURL "http://127.0.0.1:1572"`.
+   * Суффикс `/e1crdbg` в параметре `/DEBUGGERURL` указывать **НЕЛЬЗЯ**.
+3. **PropertyID модулей:**
+   * Стандартный модуль управляемого приложения: `d22e852a-cf8a-4f77-8ccb-3548e7792bea`.
