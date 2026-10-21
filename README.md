@@ -24,23 +24,38 @@
 
 ## Варианты поставки и развёртывания
 
-Продукт доступен в трёх удобных форматах:
+Продукт доступен в удобных форматах под любую ОС:
 
-### 1. Единый скомпилированный бинарный файл (`onec-debug.exe`)
+### 1. Windows: Единый скомпилированный `.exe` (`dist/onec-debug.exe`)
 * **Для кого:** для разработчиков и агентов на Windows, которым не нужен установленный Python.
-* **Как запустить:** скачать `onec-debug.exe` (9 МБ) и сразу выполнять:
-  ```bash
+* **Как запустить:** скачать `onec-debug.exe` (9 МБ) и сразу выполнять в командной строке:
+  ```cmd
   onec-debug.exe list
   onec-debug.exe run "scenario"
   onec-debug.exe mcp
   ```
-* **Как пересобрать:**
+* **Сборка из исходников:**
   ```bash
   pip install pyinstaller
   pyinstaller --onefile --clean --name onec-debug run_entrypoint.py
   ```
 
-### 2. Контейнер Docker / Docker Compose
+### 2. Linux: Автономный исполняемый файл (`dist/onec-debug-linux`)
+* **Для кого:** для Astra Linux (SE 1.7/1.8), RedOS, Debian, Ubuntu, RHEL, CentOS.
+* **Преимущества:** не требует компиляции C-библиотек или совпадения версий glibc; запускается напрямую через системный `python3`.
+* **Как запустить на Linux:**
+  ```bash
+  chmod +x onec-debug-linux
+  ./onec-debug-linux list
+  ./onec-debug-linux run "scenario"
+  ./onec-debug-linux mcp
+  ```
+* **Сборка из исходников:**
+  ```bash
+  python build_linux_app.py
+  ```
+
+### 3. Контейнер Docker / Docker Compose
 * **Для кого:** для серверных окружений, микросервисов, CI/CD и удалённого подключения AI-агентов.
 * **Запуск через Docker Compose:**
   ```bash
@@ -56,7 +71,7 @@
   docker run -d -p 8080:8080 --add-host=host.docker.internal:host-gateway onec-debug
   ```
 
-### 3. Исходный Python-пакет (`pip install`)
+### 4. Исходный Python-пакет (`pip install`)
 * **Для кого:** для стандартной интеграции в Python-окружения:
   ```bash
   pip install -e .
