@@ -9,7 +9,7 @@ import time
 
 from .detector import detect_platform, list_known_bases, resolve_base
 from .session import DebugSession
-from .mcp_server import run_mcp_server
+from .mcp_server import run_stdio_mcp_server, run_http_mcp_server
 
 
 def cmd_list(args):
@@ -89,6 +89,14 @@ def cmd_test(args):
     print("Всё готово к работе.")
 
 
+def cmd_mcp(args):
+    """Запуск MCP сервера в stdio или HTTP режиме."""
+    if args.http:
+        run_http_mcp_server(host=args.host, port=args.http)
+    else:
+        run_stdio_mcp_server()
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="onec-debug: Автономная отладка 1С без Конфигуратора")
@@ -112,8 +120,10 @@ def main():
     p_test.set_defaults(func=cmd_test)
 
     # mcp
-    p_mcp = subparsers.add_parser("mcp", help="Запуск MCP-сервера для AI-агентов (stdio)")
-    p_mcp.set_defaults(func=lambda args: run_mcp_server())
+    p_mcp = subparsers.add_parser("mcp", help="Запуск MCP-сервера для AI-агентов (stdio или HTTP)")
+    p_mcp.add_argument("--http", type=int, nargs="?", const=8080, help="Запустить как HTTP-сервер на указанном порту (default: 8080)")
+    p_mcp.add_argument("--host", default="0.0.0.0", help="Хост для HTTP-сервера (default: 0.0.0.0)")
+    p_mcp.set_defaults(func=cmd_mcp)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

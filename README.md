@@ -22,6 +22,49 @@
 
 ---
 
+## Варианты поставки и развёртывания
+
+Продукт доступен в трёх удобных форматах:
+
+### 1. Единый скомпилированный бинарный файл (`onec-debug.exe`)
+* **Для кого:** для разработчиков и агентов на Windows, которым не нужен установленный Python.
+* **Как запустить:** скачать `onec-debug.exe` (9 МБ) и сразу выполнять:
+  ```bash
+  onec-debug.exe list
+  onec-debug.exe run "scenario"
+  onec-debug.exe mcp
+  ```
+* **Как пересобрать:**
+  ```bash
+  pip install pyinstaller
+  pyinstaller --onefile --clean --name onec-debug run_entrypoint.py
+  ```
+
+### 2. Контейнер Docker / Docker Compose
+* **Для кого:** для серверных окружений, микросервисов, CI/CD и удалённого подключения AI-агентов.
+* **Запуск через Docker Compose:**
+  ```bash
+  docker compose up -d
+  ```
+  Сервер запускает HTTP MCP эндпоинт на `http://localhost:8080/mcp` и обращается к хостовому серверу отладки 1С через `host.docker.internal:1572`.
+* **Прямой запуск через Docker:**
+  ```bash
+  # Сборка образа
+  docker build -t onec-debug .
+
+  # Запуск HTTP MCP сервера
+  docker run -d -p 8080:8080 --add-host=host.docker.internal:host-gateway onec-debug
+  ```
+
+### 3. Исходный Python-пакет (`pip install`)
+* **Для кого:** для стандартной интеграции в Python-окружения:
+  ```bash
+  pip install -e .
+  python -m onec_debug list
+  ```
+
+---
+
 ## Архитектура
 
 ```

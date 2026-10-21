@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-from .cli import main
+try:
+    from .cli import main
+except (ImportError, ValueError):
+    from onec_debug.cli import main
 
 if __name__ == "__main__":
     main()

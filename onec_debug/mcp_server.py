@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """
 Универсальный MCP-сервер (Model Context Protocol) для отладки 1С:Предприятия.
-Позволяет AI-агентам (Hermes, Claude Code, Cursor, Cline, Antigravity) управлять отладкой 1С через стандартный протокол.
+Поддерживает два режима транспорта:
+1. stdio (JSON-RPC по стандартным потокам ввода/вывода) — для локальных агентов (Cursor, Claude Code, Cline, Hermes).
+2. HTTP (порт /mcp) — для Docker-контейнеров, удалённых сервисов и сетевого взаимодействия.
 """
 
 import sys
 import json
 import logging
 from typing import Dict, Any, Optional
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .detector import list_known_bases, resolve_base, detect_platform
 from .session import DebugSession
@@ -190,7 +193,6 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> Any:
             thick_client=thick
         )
         session.start()
-        # Ожидаем подключение цели
         target_id = session.wait_for_target(timeout_sec=15)
         ACTIVE_SESSION = session
 
@@ -257,7 +259,79 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> Any:
         raise ValueError(f"Неизвестный инструмент: {name}")
 
 
-def run_mcp_server():
+def process_jsonrpc_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Обрабатывает входящее сообщение протокола MCP / JSON-RPC."""
+    req_id = req.get("id")
+    method = req.get("method")
+    params = req.get("params", {})
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {
+                    "name": "1c-debug",
+                    "version": "1.0.0"
+                }
+            }
+        }
+    elif method == "notifications/initialized":
+        return None
+    elif method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": get_tool_definitions()
+            }
+        }
+    elif method == "tools/call":
+        tool_name = params.get("name")
+        tool_args = params.get("arguments", {})
+        try:
+            res = handle_tool_call(tool_name, tool_args)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(res, ensure_ascii=False, indent=2)
+                        }
+                    ]
+                }
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "isError": True,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Ошибка выполнения {tool_name}: {str(e)}"
+                        }
+                    ]
+                }
+            }
+    elif req_id is not None:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {
+                "code": -32601,
+                "message": f"Метод не найден: {method}"
+            }
+        }
+    return None
+
+
+def run_stdio_mcp_server():
     """Основной цикл обработки JSON-RPC MCP протокола через stdio."""
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stdin.reconfigure(encoding="utf-8")
@@ -272,83 +346,56 @@ def run_mcp_server():
         except Exception:
             continue
 
-        req_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params", {})
-
-        if method == "initialize":
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {
-                        "name": "1c-debug",
-                        "version": "1.0.0"
-                    }
-                }
-            }
+        resp = process_jsonrpc_request(req)
+        if resp is not None:
             sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
             sys.stdout.flush()
 
-        elif method == "notifications/initialized":
-            pass
 
-        elif method == "tools/list":
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "tools": get_tool_definitions()
-                }
-            }
-            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
+class McpHttpHandler(BaseHTTPRequestHandler):
+    """HTTP обработчик для сетевого/Docker MCP взаимодействия."""
 
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            tool_args = params.get("arguments", {})
-            try:
-                res = handle_tool_call(tool_name, tool_args)
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(res, ensure_ascii=False, indent=2)
-                            }
-                        ]
-                    }
-                }
-            except Exception as e:
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "isError": True,
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Ошибка выполнения {tool_name}: {str(e)}"
-                            }
-                        ]
-                    }
-                }
-            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
+    def do_POST(self):
+        ln = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(ln).decode("utf-8", errors="replace") if ln else ""
+        try:
+            req = json.loads(body)
+            resp = process_jsonrpc_request(req) or {}
+            out = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+        except Exception as e:
+            err = json.dumps({"jsonrpc": "2.0", "error": {"code": -32700, "message": str(e)}}).encode("utf-8")
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(err)))
+            self.end_headers()
+            self.wfile.write(err)
 
-        elif req_id is not None:
-            # Неизвестный запрос
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "error": {
-                    "code": -32601,
-                    "message": f"Метод не найден: {method}"
-                }
-            }
-            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
+    def do_GET(self):
+        if self.path in ("/", "/health"):
+            data = b'{"status": "ok", "service": "1c-debug-mcp"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *a):
+        pass
+
+
+def run_http_mcp_server(host: str = "0.0.0.0", port: int = 8080):
+    """Запускает HTTP MCP сервер (для Docker / удалённых агентов)."""
+    server = ThreadingHTTPServer((host, port), McpHttpHandler)
+    print(f"onec-debug MCP HTTP server listening on http://{host}:{port}/mcp", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("MCP HTTP server stopped.", file=sys.stderr)
