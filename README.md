@@ -31,7 +31,7 @@
 * **Как запустить:** скачать `onec-debug.exe` (9 МБ) и сразу выполнять в командной строке:
   ```cmd
   onec-debug.exe list
-  onec-debug.exe run "scenario"
+  onec-debug.exe run "test"
   onec-debug.exe mcp
   ```
 * **Сборка из исходников:**
@@ -47,7 +47,7 @@
   ```bash
   chmod +x onec-debug-linux
   ./onec-debug-linux list
-  ./onec-debug-linux run "scenario"
+  ./onec-debug-linux run "test"
   ./onec-debug-linux mcp
   ```
 * **Сборка из исходников:**
@@ -140,31 +140,31 @@ onec-debug list
 ```
 *Пример вывода:*
 ```text
-=== Найдено баз 1С: 13 ===
-[01] scenario
-     Тип:   СЕРВЕР (infoBaseAlias: scenario)
-     Подкл: Srvr="localhost";Ref="scenario";
-     Запуск:/S"localhost:1541\scenario"
+=== Найдено баз 1С: 2 ===
+[01] test
+     Тип:   СЕРВЕР (infoBaseAlias: test)
+     Подкл: Srvr="localhost";Ref="test";
+     Запуск:/S"localhost:1541\test"
 
-[02] АСБНУ
+[02] test-file
      Тип:   ФАЙЛОВАЯ (infoBaseAlias: DefAlias)
-     Подкл: File="E:\1C_Base\ASBNU";
-     Запуск:/F"E:\1C_Base\ASBNU"
+     Подкл: File="C:\1C_Base\test-file";
+     Запуск:/F"C:\1C_Base\test-file"
 ```
 
 #### Запуск отладки для любой базы:
 ```bash
 # По имени из списка ibases.v8i:
-onec-debug run "scenario"
+onec-debug run "test"
 
 # Серверная база по имени:
-onec-debug run --base "scenario" -u "Администратор"
+onec-debug run --base "test" -u "Администратор"
 
 # Файловая база по пути к папке:
-onec-debug run "E:\1C_Base\ASBNU"
+onec-debug run "C:\1C_Base\test-file"
 
 # Серверная база по строке подключения:
-onec-debug run 'Srvr="localhost:1541";Ref="scenario";'
+onec-debug run 'Srvr="localhost:1541";Ref="test";'
 ```
 
 ---
@@ -233,7 +233,7 @@ onec-debug run 'Srvr="localhost:1541";Ref="scenario";'
          "name": "1C: Отладка",
          "debugServerHost": "localhost",
          "debugServerPort": 1572,
-         "infoBaseAlias": "scenario",
+         "infoBaseAlias": "test",
          "autoAttachTypes": ["Client", "Server", "Job"]
        }
      ]
@@ -257,7 +257,7 @@ onec-debug run 'Srvr="localhost:1541";Ref="scenario";'
 
 1. **infoBaseAlias:**
    * Для **файловых баз** значение строго фиксировано: `DefAlias`.
-   * Для **серверных баз** значение обязано быть равно **имени базы в кластере** (например, `scenario`). При значении `DefAlias` сервер вернет 0 целей.
+   * Для **серверных баз** значение обязано быть равно **имени базы в кластере** (например, `test`). При значении `DefAlias` сервер вернет 0 целей.
 2. **Параметры запуска клиента 1С:**
    * Протокол должен совпадать: на сервере `http` и в клиенте `-http`.
    * Параметр `/DEBUGGERURL`: строго `http://127.0.0.1:1572` **без суффикса `/e1crdbg`**.

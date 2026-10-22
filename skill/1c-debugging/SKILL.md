@@ -30,10 +30,10 @@ python -m onec_debug test
 python -m onec_debug list
 
 # 3. Запуск отладки конкретной базы (файловой или серверной)
-python -m onec_debug run "scenario"
-python -m onec_debug run --base "АСБНУ"
-python -m onec_debug run --file "E:\1C_Base\ESED"
-python -m onec_debug run --conn "Srvr=\"localhost\";Ref=\"scenario\";"
+python -m onec_debug run "test"
+python -m onec_debug run --base "test"
+python -m onec_debug run --file "C:\1C_Base\test-file"
+python -m onec_debug run --conn "Srvr=\"localhost\";Ref=\"test\";"
 ```
 
 ---

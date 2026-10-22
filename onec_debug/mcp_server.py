@@ -39,7 +39,7 @@ def get_tool_definitions() -> list:
                 "properties": {
                     "base": {
                         "type": "string",
-                        "description": "Имя базы из списка ibases.v8i, путь к каталогу файловой базы или строка соединения (например, 'scenario' или 'File=\"E:\\Base\"' или 'Srvr=\"localhost\";Ref=\"scenario\";')"
+                        "description": "Имя базы из списка ibases.v8i, путь к каталогу файловой базы или строка соединения (например, 'test' или 'File=\"C:\\1C_Base\\test-file\"' или 'Srvr=\"localhost\";Ref=\"test\";')"
                     },
                     "user": {
                         "type": "string",
